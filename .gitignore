@@ -101,3 +101,4 @@ htmlcov/
 tmp/
 temp/
 *.tmp
+discord_attachments/

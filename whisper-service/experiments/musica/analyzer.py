@@ -14,7 +14,7 @@ import numpy as np
 
 
 PYIN_FMIN = librosa.note_to_hz("C2")
-PYIN_FMAX = librosa.note_to_hz("C7")
+PYIN_FMAX = librosa.note_to_hz("C5")
 
 
 @dataclass
