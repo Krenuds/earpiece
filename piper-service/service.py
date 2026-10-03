@@ -7,8 +7,10 @@ This service converts the embedded Piper client library into a RESTful HTTP API.
 
 import asyncio
 import io
+import json
 import os
 import logging
+import subprocess
 from pathlib import Path
 from typing import Optional, Dict, List, Any, Literal
 import urllib.request
@@ -32,8 +34,15 @@ class TTSRequest(BaseModel):
     """Request model for text-to-speech generation."""
     text: str = Field(..., description="Text to convert to speech", min_length=1, max_length=10000)
     voice: Optional[str] = Field(None, description="Voice model to use (defaults to service default)")
-    speed: Optional[float] = Field(1.0, description="Speech speed multiplier", ge=0.5, le=2.0)
+    speed: Optional[float] = Field(None, description="Speech speed multiplier (overrides the mode)", ge=0.5, le=2.0)
+    noise_scale: Optional[float] = Field(None, description="Pitch/energy variation; lower is flatter (overrides the mode)", ge=0.0, le=1.5)
+    mode: Optional[str] = Field(None, description="Voice mode for this request only (defaults to the active mode)")
     format: Literal["wav", "opus"] = "wav"
+
+
+class ModeRequest(BaseModel):
+    """Switch the active voice mode."""
+    mode: str = Field(..., description="Mode name, or 'off'")
 
 
 class VoiceInfo(BaseModel):
@@ -221,7 +230,66 @@ def wav_to_opus(wav_bytes: bytes) -> bytes:
     return out_buf.getvalue()
 
 
-def synthesize_audio_sync(text: str, voice_model: piper.PiperVoice) -> bytes:
+MODE_OFF = "off"
+
+
+def active_mode_path() -> Path:
+    return config.state_dir / "active_mode"
+
+
+def read_active_mode() -> str:
+    try:
+        return active_mode_path().read_text().strip() or MODE_OFF
+    except FileNotFoundError:
+        return MODE_OFF
+
+
+def available_modes() -> List[str]:
+    return sorted(p.stem for p in config.voice_modes_dir.glob("*.json"))
+
+
+def load_mode(name: str) -> Dict[str, Any]:
+    """Read a mode file fresh on every call so edits land without a restart."""
+    if name == MODE_OFF:
+        return {}
+    path = config.voice_modes_dir / f"{name}.json"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Voice mode '{name}' not found, choose from: {', '.join([MODE_OFF] + available_modes())}")
+    try:
+        return json.loads(path.read_text())
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"Voice mode '{name}' is not valid JSON: {e}")
+
+
+def shodan_args(shodan: Dict[str, Any]) -> List[str]:
+    args = [config.shodan_render, "-", "-"]
+    if "preset" in shodan:
+        args += ["--preset", str(shodan["preset"])]
+    if "seed" in shodan:
+        args += ["--seed", str(shodan["seed"])]
+    if "rack" in shodan:
+        rack = shodan["rack"]
+        args += ["--rack", rack if isinstance(rack, str) else ",".join(rack)]
+    for key, value in shodan.get("set", {}).items():
+        args += ["--set", f"{key}={value}"]
+    return args
+
+
+def apply_shodan(wav_bytes: bytes, mode_name: str, shodan: Dict[str, Any]) -> bytes:
+    """Pipe WAV through shodan-render. Fails open to the dry voice so a broken mode never goes silent."""
+    args = shodan_args(shodan)
+    try:
+        result = subprocess.run(args, input=wav_bytes, capture_output=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        logger.error(f"Voice mode '{mode_name}' render failed, sending dry audio: {e}")
+        return wav_bytes
+    if result.returncode != 0 or not result.stdout:
+        logger.error(f"Voice mode '{mode_name}' render exited {result.returncode}, sending dry audio: {result.stderr.decode(errors='replace').strip()}")
+        return wav_bytes
+    return result.stdout
+
+
+def synthesize_audio_sync(text: str, voice_model: piper.PiperVoice, synth_args: Dict[str, float]) -> bytes:
     """Synchronous audio synthesis - runs in executor."""
     wav_buffer = io.BytesIO()
     
@@ -233,7 +301,7 @@ def synthesize_audio_sync(text: str, voice_model: piper.PiperVoice) -> bytes:
             wav_file.setframerate(voice_model.config.sample_rate)  # Use model's sample rate
             
             # Generate audio using the correct Piper API
-            voice_model.synthesize(text, wav_file)
+            voice_model.synthesize(text, wav_file, **synth_args)
         
         return wav_buffer.getvalue()
         
@@ -252,20 +320,32 @@ async def text_to_speech(request: TTSRequest) -> Response:
     """
     try:
         voice_name = request.voice or config.default_voice
-        logger.info(f"TTS request: '{request.text[:50]}...' using voice '{voice_name}'")
-        
+        mode_name = request.mode or read_active_mode()
+        mode = load_mode(mode_name)
+        logger.info(f"TTS request: '{request.text[:50]}...' using voice '{voice_name}', mode '{mode_name}'")
+
+        synth_args = {k: v for k, v in mode.get("piper", {}).items() if k in ("length_scale", "noise_scale", "noise_w")}
+        if request.speed is not None:
+            synth_args["length_scale"] = 1.0 / request.speed
+        if request.noise_scale is not None:
+            synth_args["noise_scale"] = request.noise_scale
+
         # Load voice model
         voice_model = await load_voice_model(voice_name)
-        
+
         # Generate audio in executor
         loop = asyncio.get_running_loop()
         audio_data = await loop.run_in_executor(
             None,
             synthesize_audio_sync,
             request.text,
-            voice_model
+            voice_model,
+            synth_args,
         )
-        
+
+        if "shodan" in mode:
+            audio_data = await loop.run_in_executor(None, apply_shodan, audio_data, mode_name, mode["shodan"])
+
         logger.info(f"TTS completed: {len(audio_data)} bytes generated")
 
         if request.format == "opus":
@@ -288,9 +368,26 @@ async def text_to_speech(request: TTSRequest) -> Response:
             }
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"TTS request failed: {e}")
         raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
+
+
+@app.get("/mode")
+async def get_mode() -> Dict[str, Any]:
+    """Active voice mode and the modes available to switch to."""
+    return {"mode": read_active_mode(), "available": [MODE_OFF] + available_modes()}
+
+
+@app.post("/mode")
+async def set_mode(request: ModeRequest) -> Dict[str, Any]:
+    """Switch the active voice mode for every /tts until switched again. Persists across restarts."""
+    load_mode(request.mode)
+    active_mode_path().write_text(request.mode + "\n")
+    logger.info(f"Voice mode set to '{request.mode}'")
+    return {"mode": request.mode}
 
 
 @app.get("/voices", response_model=List[VoiceInfo])

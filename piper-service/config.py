@@ -24,6 +24,11 @@ class ServiceConfig:
         self.default_voice = os.getenv("PIPER_DEFAULT_VOICE", "en_US-lessac-low")
         self.max_text_length = int(os.getenv("PIPER_MAX_TEXT_LENGTH", "10000"))
 
+        # Voice modes: one <name>.json per mode, active mode persisted in the state dir
+        self.voice_modes_dir = Path(os.getenv("PIPER_VOICE_MODES_DIR", "voicemodes"))
+        self.state_dir = Path(os.getenv("PIPER_STATE_DIR", "state"))
+        self.shodan_render = os.getenv("PIPER_SHODAN_RENDER", "shodan-render")
+
         # Logging
         self.log_level = os.getenv("LOG_LEVEL", "INFO").upper()
         self.log_file = os.getenv("PIPER_LOG_FILE", "logs/piper-service.log")
@@ -33,6 +38,7 @@ class ServiceConfig:
         
         # Ensure required directories exist
         self.models_dir.mkdir(parents=True, exist_ok=True)
+        self.state_dir.mkdir(parents=True, exist_ok=True)
         Path(self.log_file).parent.mkdir(parents=True, exist_ok=True)
     
     def _validate(self):
@@ -55,6 +61,8 @@ class ServiceConfig:
             'models_dir': str(self.models_dir),
             'default_voice': self.default_voice,
             'max_text_length': self.max_text_length,
+            'voice_modes_dir': str(self.voice_modes_dir),
+            'state_dir': str(self.state_dir),
             'log_level': self.log_level,
             'log_file': self.log_file
         }

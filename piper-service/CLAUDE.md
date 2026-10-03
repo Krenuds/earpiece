@@ -13,7 +13,9 @@ Piper-TTS wrapped in FastAPI. Text in, audio out. CPU-only.
 
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/tts` | `{text, voice?, speed?, format?}`. `format` = `wav` \| `opus` (Opus = Ogg-Opus 48 kHz stereo 64 kbps `application=voip`). |
+| POST | `/tts` | `{text, voice?, speed?, noise_scale?, mode?, format?}`. `format` = `wav` \| `opus` (Opus = Ogg-Opus 48 kHz stereo 64 kbps `application=voip`). `speed` and `noise_scale` override the mode. |
+| GET | `/mode` | `{mode, available}`. |
+| POST | `/mode` | `{mode}`. Sets the active voice mode for every `/tts`; persists across restarts. `off` is always valid. |
 | GET | `/voices` | Lists `EXTENDED_VOICE_CATALOG` from `config.py` with on-disk availability. |
 | GET | `/health` | `{status, voice_models_loaded, default_voice, models_directory}`. |
 | POST | `/download-voice` | Schedules a background HF download. **Errors in the background task are silently swallowed** — check logs to confirm. |
@@ -28,8 +30,24 @@ Piper-TTS wrapped in FastAPI. Text in, audio out. CPU-only.
 | `PIPER_MODELS_DIR` | `/app/models/piper` | |
 | `PIPER_DEFAULT_VOICE` | `en_US-lessac-low` (`-medium` in compose) | Pre-loaded at startup. |
 | `PIPER_MAX_TEXT_LENGTH` | `10000` | Loaded but shadowed by Pydantic `max_length=10000` — see ROADMAP. |
+| `PIPER_VOICE_MODES_DIR` | `voicemodes` | Mode files, mounted read-only from `./voicemodes`. |
+| `PIPER_STATE_DIR` | `state` | Holds `active_mode`. Mounted from `~/services/data/piper/state` (uid 1001). |
+| `PIPER_SHODAN_RENDER` | `shodan-render` | Filter binary for modes with a `shodan` block. |
 | `LOG_LEVEL` | `INFO` | |
 | `PIPER_LOG_FILE` | `/app/logs/piper-service.log` | |
+
+## Voice modes
+
+One `voicemodes/<name>.json` per mode, re-read on every request so edits land without a restart:
+
+```json
+{
+  "piper": { "length_scale": 1.15, "noise_scale": 0.3, "noise_w": 0.8 },
+  "shodan": { "preset": "ss1", "seed": 1, "rack": "id,id", "set": { "knob": 0.5 } }
+}
+```
+
+Both blocks are optional. `shodan` pipes the WAV through `shodan-render` before the Opus encode. If the render fails, the dry voice is sent and the error is logged.
 
 ## Build / run / test
 

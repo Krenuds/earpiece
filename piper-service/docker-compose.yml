@@ -9,12 +9,16 @@ services:
     volumes:
       - /home/travis/services/data/piper/models:/app/models/piper
       - ../logs:/app/logs
+      - ./voicemodes:/app/voicemodes:ro
+      - /home/travis/services/data/piper/state:/app/state
     environment:
       - PIPER_PORT=9001
       - PIPER_HOST=0.0.0.0
       - PIPER_DEFAULT_VOICE=en_US-lessac-medium
       - PIPER_MODELS_DIR=/app/models/piper
       - PIPER_LOG_FILE=/app/logs/piper-service.log
+      - PIPER_VOICE_MODES_DIR=/app/voicemodes
+      - PIPER_STATE_DIR=/app/state
       - PIPER_MAX_TEXT_LENGTH=10000
       - PIPER_MAX_CONCURRENT=10
       - PIPER_MODEL_CACHE_SIZE=5
