@@ -2,6 +2,12 @@
 # Piper TTS runs efficiently on CPU and doesn't require GPU acceleration like Whisper
 # Using Python 3.11 on Ubuntu 22.04 for compatibility and performance
 
+# Stage 0: shodan-render, the voice-mode filter. Static musl build so it runs on the bullseye runtime.
+FROM rust:1-alpine AS shodan
+ARG SHODAN_REV=c96920cc278a5fe7916e5bd3171a231cc7b4a036
+RUN apk add --no-cache musl-dev git && \
+    cargo install --locked --git https://github.com/Krenuds/shodan-voice --rev ${SHODAN_REV} shodan-render --root /opt/shodan
+
 # Stage 1: Build environment for dependencies
 FROM python:3.11-slim-bullseye AS builder
 
@@ -57,6 +63,8 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy cached voice models from builder
 COPY --from=builder /opt/models /opt/models
+
+COPY --from=shodan /opt/shodan/bin/shodan-render /usr/local/bin/shodan-render
 
 # Create non-root user for security
 RUN groupadd --gid 1001 piper && \

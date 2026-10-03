@@ -1,3 +1,4 @@
 {
-  "piper": { "length_scale": 1.15, "noise_scale": 0.3 }
+  "piper": { "length_scale": 1.15, "noise_scale": 0.3 },
+  "shodan": { "preset": "ss1" }
 }

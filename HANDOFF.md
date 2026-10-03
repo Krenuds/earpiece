@@ -17,7 +17,7 @@ A remotely switchable voice mode on piper-service. Flip one HTTP call to `dreadn
 ## State
 
 - shodan-voice: workspace split merged and pushed to `master`. `shodan-render` matches the old `--render` byte for byte via files and stdin/stdout.
-- piper: `/mode` (GET/POST), persisted active mode, per-request `mode`, `speed` (now wired to `length_scale`) and `noise_scale` are live on 9001. Mode files live in `piper-service/voicemodes/`, state in `~/services/data/piper/state`. A missing or failing render falls back to the dry voice. `dreadnought.json` only sets piper knobs so far. Mode is `off`.
+- piper: `/mode` (GET/POST), persisted active mode, per-request `mode`, `speed` (now wired to `length_scale`) and `noise_scale` are live on 9001. Mode files live in `piper-service/voicemodes/`, state in `~/services/data/piper/state`. A missing or failing render falls back to the dry voice. `shodan-render` is baked into the piper image (static musl build, pinned rev, `SHODAN_REV` build arg). `dreadnought.json` runs the stock `ss1` SHODAN preset as a placeholder. Mode is `off`.
 - whisper: now runs `large-v3-turbo` (was `small`), about 0.5 s per average sentence on the 2080.
 - Host: only `docker-compose` (v1 binary) is installed, not the `docker compose` plugin.
 
@@ -35,8 +35,8 @@ A Python prototype (`refs/dreadnought/dreadnought_proto.wav`) landed "in the bal
 
 ## Next
 
-1. New shodan-core modules for Dreadnought: pitch-down, sub layer, drive, comb resonance, short reverb. Tune against the DoW2 reference.
-2. Piper: bake `shodan-render` into the image (multi-stage build) and add a `shodan` block to `voicemodes/dreadnought.json`.
+1. Play with the existing modules' knobs live in `dreadnought.json` before writing anything new.
+2. New shodan-core modules for Dreadnought where the existing ones fall short: pitch-down, sub layer, drive, comb resonance, short reverb. Bump `SHODAN_REV` to ship them.
 3. Tuning loop snapshots ("go back two"), not built yet.
 
 ## Toji side
