@@ -17,7 +17,10 @@ A remotely switchable voice mode on piper-service. Flip one HTTP call to `dreadn
 ## State
 
 - shodan-voice: workspace split merged and pushed to `master`. `shodan-render` matches the old `--render` byte for byte via files and stdin/stdout.
-- piper: `/mode` (GET/POST), persisted active mode, per-request `mode`, `speed` (now wired to `length_scale`) and `noise_scale` are live on 9001. Mode files live in `piper-service/voicemodes/`, state in `~/services/data/piper/state`. A missing or failing render falls back to the dry voice. `shodan-render` is baked into the piper image (static musl build, pinned rev, `SHODAN_REV` build arg). `dreadnought.json` runs the stock `ss1` SHODAN preset as a placeholder. Mode is `off`.
+- piper: `/mode` (GET/POST), persisted active mode, per-request `mode`, `speed` (now wired to `length_scale`) and `noise_scale` are live on 9001. Mode files live in `piper-service/voicemodes/`, state in `~/services/data/piper/state`. A missing or failing render falls back to the dry voice. `shodan-render` is baked into the piper image (static musl build, pinned rev, `SHODAN_REV` build arg). Modes: `shodan` (ss1 preset, stutter off) and `dreadnought` (pitch -12 st via SHODAN Core into the new Hull module). Mode is `off`.
+- Hull module (shodan-voice, uncommitted): low cut, octave sub (unused, the reference low end is chest resonance), body peak, tanh drive, grit hiss, metal comb, small steel room. Running in piper only as a `docker cp` of a local musl build; a rebuild loses it.
+- Dreadnought v2 matches the reference spectrum (A/B distance 9, was 25) but is close to unintelligible. Suspect the granular octave shift and formant -4, not the effects.
+- A/B harness: `refs/dreadnought/ab.py cands/*.json`, scores candidates against the DoW2 reference; `SHODAN_RENDER=` tests a local binary.
 - whisper: now runs `large-v3-turbo` (was `small`), about 0.5 s per average sentence on the 2080.
 - Host: only `docker-compose` (v1 binary) is installed, not the `docker compose` plugin.
 
@@ -35,9 +38,10 @@ A Python prototype (`refs/dreadnought/dreadnought_proto.wav`) landed "in the bal
 
 ## Next
 
-1. Play with the existing modules' knobs live in `dreadnought.json` before writing anything new.
-2. New shodan-core modules for Dreadnought where the existing ones fall short: pitch-down, sub layer, drive, comb resonance, short reverb. Bump `SHODAN_REV` to ship them.
-3. Tuning loop snapshots ("go back two"), not built yet.
+1. Read the two research reports in `refs/research/` (robot-history: how classic robot voices were made; dsp-quality: pro-grade shifting, distortion, rooms). Briefs sit next to them.
+2. Add intelligibility to the A/B harness: run each render through whisper on 9000 and score word error rate against the input text, alongside the reference distance.
+3. Rework the chain per the research; commit Hull and bump `SHODAN_REV` to ship.
+4. Tuning loop snapshots ("go back two"), not built yet.
 
 ## Toji side
 
