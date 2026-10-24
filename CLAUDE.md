@@ -1,51 +1,45 @@
 # earpiece
 
-Two Docker microservices for voice I/O — text-to-speech and speech-to-text — exposed as plain HTTP APIs. Independent resource; not tied to any specific consumer.
+Two Docker microservices for voice I/O, text-to-speech and speech-to-text, exposed as plain HTTP
+APIs. Toji uses both, but they stay independent of any one consumer.
 
 ## Services
 
-| Service | Role | Port | Hardware | Lifecycle owner |
-|---|---|---|---|---|
-| `piper-service` | TTS — text → WAV / Ogg-Opus | 9001 | CPU only | `piper-service/docker-compose.yml` |
-| `whisper-service` | STT — audio → text / json / srt / vtt | 9000 | NVIDIA GPU, CPU fallback | `whisper-service/docker-compose.yml` |
+| Service | Role | Port | Hardware |
+|---|---|---|---|
+| `piper-service` | TTS: text to WAV or Ogg-Opus, switchable voice modes | 9001 | CPU only |
+| `whisper-service` | STT: audio to text, json, srt or vtt (`large-v3-turbo`) | 9000 | NVIDIA GPU, CPU fallback |
 
-**Each service is launched from its own directory.** There is no root compose. Running both: `cd piper-service && docker compose up -d` and same in `whisper-service/`.
+Each service runs from its own directory with its own `docker-compose.yml`; there is no root
+compose and there shouldn't be. Only the v1 `docker-compose` binary is installed, not the
+`docker compose` plugin. Each service has its own `CLAUDE.md` for its config keys.
 
-## Shared host paths
+## Host paths
 
 | Host path | Purpose |
 |---|---|
-| `./logs/` | Bind-mounted into both containers as `/app/logs`. Both services write rotated logs here (10MB × 5). |
-| `~/services/data/piper/models` | Bind-mounted piper voice models (`.onnx` + `.json`). |
-| `~/services/data/whisper/models` | Bind-mounted HF cache for whisper models. |
+| `./logs/` | Mounted into both containers as `/app/logs`, rotated logs (10MB x 5) |
+| `~/services/data/piper/models` | Piper voice models (`.onnx` + `.json`) |
+| `~/services/data/piper/state` | Persisted active voice mode |
+| `piper-service/voicemodes/` | Voice mode files, mounted read-only; edit without a rebuild |
+| `~/services/data/whisper/models` | HF cache for whisper models |
 
 ## Common operations
 
 ```bash
-# Restart a service
-cd piper-service && docker compose restart
-
-# Rebuild after source changes
-cd piper-service && docker compose up -d --build
-
-# Tail logs (host-side, both services)
+cd piper-service && docker-compose up -d --build   # ship code changes
+cd piper-service && docker-compose restart
 tail -f logs/piper-service.log logs/whisper-service.log
-
-# Check health
-curl -s localhost:9001/health   # piper
-curl -s localhost:9000/health   # whisper
+curl -s localhost:9001/health; curl -s localhost:9000/health
 ```
 
 ## Configuration
 
-All config flows through each service's `.env` (template at `.env.example` at repo root). Per-service composes consume those vars — there is no separate per-service `.env`. See each service's `CLAUDE.md` for the keys each one reads.
-
-## Repo conventions
-
-- Per-service compose files own their containers. Don't add a root `docker-compose.yml` — the previous one was deleted as stale legacy.
-- `.nelson/` is a local Nelson skill workspace (gitignored).
-- Service code changes only ship to the running container after a `docker compose up -d --build` from that service's directory.
+Config is the `environment:` block in each service's compose file. There is no live `.env`;
+the `.env.example` files are reference only.
 
 ## Open work
 
-- `ROADMAP.md` at repo root tracks deferred behavior-changing fixes (see §4 SKIP list). Not blocking; pick up when convenient.
+- `HANDOFF.md`: voice modes (Dreadnought filter via shodan-render from `~/shodan-voice`), state
+  and next steps.
+- `ROADMAP_MUSICA.md`: the `/music` analyzer endpoint.
